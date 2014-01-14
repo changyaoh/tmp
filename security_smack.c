@@ -66,7 +66,7 @@ struct _SmackCallbackData {
 };
 
 static char *
-get_label_name(vieDomainDefPtr def)
+get_label_name(virDomainDefPtr def)
 {
 	char uuidstr[VIR_UUID_STRING_BUFLEN];
 	char *name = NULL;
@@ -81,20 +81,20 @@ get_label_name(vieDomainDefPtr def)
 
 int setfilelabel(const char *path,const char * label)
 {
-  int rc = setxattr(path,"security.SMACK64",label,strlen(label)+ 1,0);
+  int ret = setxattr(path,"security.SMACK64",label,strlen(label)+ 1,0);
    
-  if (rc < 0 && errno == ENOTSUP) {
+  if (ret < 0 && errno == ENOTSUP) {
 	  char * clabel = NULL;
 	  int err = errno;
 	  if ((getfilelabel(path,&clabel) >= 0) &&
 	      (strcmp(label,clabel) == 0)) {
-		  rc = 0;
+		  ret = 0;
 	  }else{
 		  errno = err;
 	  }
 	  free(clabel);
   }
-  return rc;
+  return ret;
  
 }
 
@@ -142,20 +142,20 @@ int getfilelabel(const char *path, char ** label)
 
 int fsetfilelabel(int fd,const char * label)
 {
-  int rc = fsetxattr(fd,"security.SMACK64",label,strlen(label)+ 1,0);
+  int ret = fsetxattr(fd,"security.SMACK64",label,strlen(label)+ 1,0);
    
-  if (rc < 0 && errno == ENOTSUP) {
+  if (ret < 0 && errno == ENOTSUP) {
 	  char * clabel = NULL;
 	  int err = errno;
 	  if ((fgetfilelabel(fd,&clabel) >= 0) &&
 	      (strcmp(label,clabel) == 0)) {
-		  rc = 0;
+		  ret = 0;
 	  }else{
 		  errno = err;
 	  }
 	  free(clabel);
   }
-  return rc;
+  return ret;
 }
 
 int fgetfilelabel(int fd,char ** label)
@@ -200,29 +200,56 @@ int fgetfilelabel(int fd,char ** label)
 	return ret;
 }
 
+static int getpidlabel(pid_t pid,char **label)
+{
+    char *result;
+    int fd;
+    int ret;
+    char *path;
+    ret = virAsprintf(&path,"/proc/%d/attr/current",pid);
+    if (ret < 0)
+	  return -1;
+    fd = open(path,O_RDONLY);
+    if (fd < 0){
+	    VIRFREE(path);
+	    return -1;
+    }
+    ret = read(fd,result,SMACK_LABEL_LEN);
+    close(fd);
+    if(ret < 0){
+	    free(result);
+	    return -1;
+    }
+    *label = result;
+    return ret;
+
+}
+	 
+	 
 
 int setsockcreate(const char *label,const char *attr)
 {
-  int fd,rc;
-  char *path;
-  rc = asprintf(&path,"/proc/self/attr/%s",attr);
-  if (rc < 0)
+    int fd;
+    int ret = -1;
+    char *path;
+    ret = virAsprintf(&path,"/proc/self/attr/%s",attr);
+    if (ret < 0)
 	  return -1;
 
-  fd = open(path,O_WRONLY | O_CLOEXEC);
-  free(path);
-  if (fd < 0)
+    fd = open(path,O_WRONLY | O_CLOEXEC);
+    VIR_FREE(path);
+    if (fd < 0)
 	  return -1;
 
-  if (label)
+    if (label)
           ret = write(fd,label,strlen(label) + 1);
-  else 
+    else 
 	  ret = write(fd, NULL, 0);
   
 
-  close(fd);
+    close(fd);
 
-  return (ret < 0) ? -1 : 0;
+    return (ret < 0) ? -1 : 0;
 
 }
 
@@ -237,7 +264,7 @@ int setsockcreate(const char *label,const char *attr)
  *setselfsocklabel(const char * conname,const char * smacklabel)
  *{
  *
- *    int rc = -1;
+ *    int ret = -1;
  *    int sfd;
  *    DIR *dp;
  *    struct dirent *files;
@@ -264,10 +291,10 @@ int setsockcreate(const char *label,const char *attr)
  *            }
  *    }
  *
- *    rc = 0;
+ *    ret = 0;
  *
  *done:
- *    return rc;
+ *    return ret;
  *
  *}
  *
@@ -401,7 +428,7 @@ SmackRestoreSecurityFileLabel(virSecurityManagerPtr mgr,
 		              const char *path)
 {
       struct stat buf;
-      int rc = -1;
+      int ret = -1;
       char *newpath = NULL;
       char ebuf[1024];
 
@@ -419,14 +446,14 @@ SmackRestoreSecurityFileLabel(virSecurityManagerPtr mgr,
           goto err;
      }
 
-      rc = SmackSetFileLabel(newpath,"smack-unused");
+      ret = SmackSetFileLabel(newpath,"smack-unused");
      
 	  /*
-           *rc = setxattr(def->disks[i]->src,"security.SMACK64","smack-unused",strlen("smack-unused") + 1,0);
+           *ret = setxattr(def->disks[i]->src,"security.SMACK64","smack-unused",strlen("smack-unused") + 1,0);
 	   */
 err:
      VIR_FREE(newpath);
-     return rc;
+     return ret;
 
 }
 
@@ -455,10 +482,10 @@ SmackRestoreSecurityImageLabelInt(virSecurityManagerPtr mgr,
 		return 0;
 
 	if (migrated) {
-	    int rc = virStorageFileIsSharedFS(disk->src);
-	    if (rc < 0)
+	    int ret = virStorageFileIsSharedFS(disk->src);
+	    if (ret < 0)
 	        return -1;
-	    if (rc == 1) {
+	    if (ret == 1) {
 	        VIR_DEBUG("Skipping image label restore on %s because FS is shared",disk->src);
                 return 0;
             }
@@ -810,7 +837,7 @@ SmackSecurityDriverGetModel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED)
 static const char *
 SmackSecurityDriverGetDOI(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED)
 {
-	return SECURITY_APPARMOR_VOID_DOI;
+	return SECURITY_SMACK_VOID_DOI;
 }
 
 static int
@@ -845,22 +872,29 @@ SmackSecurityVerify(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 static int
 SmackSetSecurityImageLabel(virSecurityManagerPtr mgr,
 			   virDomainDefPtr def,
-			   virDomainDiskPtr disk)
+			   virDomainDiskDefPtr disk)
 {
 	virSecurityLabelDefPtr seclabel;
-
 	seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
 
-	if (secdef == NULL)
+	if (seclabel == NULL)
 	    return -1;
 
-	if (secdef->norelabel)
+	if (seclabel->norelabel)
 	    return 0;
 
 	if (disk->type == VIR_DOMAIN_DISK_TYPE_NETWORK)
 	    return 0;
 
         if (setxattr(disk->src,"security.SMACK64",secdef->imagelabel,strlen(secdef->imagelabel) + 1,0)< 0)
+
+}
+
+static int
+SmackRestoreSecurityImageLabel(virSecurityManagerPtr mgr,
+			   virDomainDefPtr def,
+			   virDomainDiskDefPtr disk)
+{
 
 }
 
@@ -904,7 +938,7 @@ SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, vi
 
     virSecurityLabelDefPtr secdef;  
     char *label = NULL;
-    int rc = -1;
+    int ret = -1;
 
     secdef = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
     if (secdef == NULL)
@@ -937,11 +971,11 @@ SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, vi
          goto done; 
     }
 
-    rc = 0;
+    ret = 0;
 done:
 
     free(label);
-    return rc;
+    return ret;
     
 }
 
@@ -970,7 +1004,7 @@ SmackSetSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
             return -1;
     }
 
-    VIR_DEBUG("Setting VM %s socket context %s",
+    VIR_DEBUG("Setting VM %s socket label %s",
               vm->name, secdef->label);
 
     if (setsockcreate(secdef->label,"sockoutcreate") == -1) {
@@ -1009,7 +1043,7 @@ SmackClearSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
             return -1;
     }
 
-    if (setsockcreate(NULL,"sockincreate") == -1&& setsockcreate(NULL,"sockoutcreate") == -1) {
+    if (setsockcreate(NULL,"sockincreate") == -1 && setsockcreate(NULL,"sockoutcreate") == -1) {
         virReportSystemError(errno,
                              _("unable to clear socket smack label '%s'"),
                              secdef->label);
@@ -1033,26 +1067,26 @@ static int
 SmackGenSecurityLabel(virSecurityManagerPtr mgr,
 		      virDomainDefPtr def)
 {
-    int rc = -1;
+    int ret = -1;
     char *label_name = NULL;
     virSecurityLabelDefPtr seclabel; 
     
     seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
     if(seclabel == NULL)
-	    return rc;
+	    return ret;
     
     VIR_DEBUG("label=%s",virSecurityManagerGetDriver(mgr));
     if (seclabel->type == VIR_DOMAIN_SECLABEL_DYNAMIC &&
         seclabel->label) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("security label already defined for VM"));
-        return rc;
+        return ret;
     }    
 
     if (seclabel->imagelabel) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("security image label already defined for VM"));
-        return rc;
+        return ret;
     } 
 
     if (seclabel->model &&
@@ -1060,32 +1094,35 @@ SmackGenSecurityLabel(virSecurityManagerPtr mgr,
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("security label model %s is not supported with smack"),
                        seclabel->model);
-         return rc;
+         return ret;
     }
 
     if ((label_name = get_label_name(def)) == NULL)
-	 return rc;
+	 return ret;
 
+    switch (seclabel->type){
+
+    }
     /*set process label*/
     if (VIR_STRDUP(seclabel->label,label_name) < 0)
 	 goto cleanup;
 
     /*set imagelabel the same as label*/
-    if (VIR_STRDUP(secdef->imagelabel,label_name) < 0)
+    if (VIR_STRDUP(seclabel->imagelabel,label_name) < 0)
 	 goto cleanup;
     
     if (!seclabel->model &&
-        VIR_STRDUP(secdef->model, SECURITY_SMACK_NAME) < 0)
+        VIR_STRDUP(seclabel->model, SECURITY_SMACK_NAME) < 0)
          goto cleanup;
 
-    rc = 0;
+    ret = 0;
 
 cleanup:
 
-    if(rc != 0){
-          VIR_FREE(secdef->label);
-	  VIR_FREE(secdef->imagelabel);
-	  VIR_FREE(secdef->model);
+    if(ret != 0){
+          VIR_FREE(seclabel->label);
+	  VIR_FREE(seclabel->imagelabel);
+	  VIR_FREE(seclabel->model);
     }
 
     VIR_RREE(label_name);
@@ -1095,7 +1132,7 @@ cleanup:
               NULLSTR(seclabel->label),
               NULLSTR(seclabel->imagelabel));
     
-    return rc;
+    return ret;
 
 }
 
@@ -1118,15 +1155,15 @@ static int
 SmackReleaseSecurityLabel(virSecurityManagerPtr mgr,
 		          virDomainDefPtr def)
 {
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	    return -1;
 
-    VIR_FREE(secdef->model);
-    VIR_FREE(secdef->label);
-    VIR_FREE(secdef->imagelabel);
+    VIR_FREE(seclabel->model);
+    VIR_FREE(seclabel->label);
+    VIR_FREE(seclabel->imagelabel);
 
     return 0;
 
@@ -1140,30 +1177,35 @@ SmackReleaseSecurityLabel(virSecurityManagerPtr mgr,
 static int
 SmackGetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	                     virDomainDefPtr def,
-	                     pid_t pid ATTRIBUTE_UNUSED,
+	                     pid_t pid,
 			     virSecurityLabelPtr sec)
 {
 
-	 int rc = -1;
+	 int ret = -1;
 	 char *label_name = NULL;
 
-	 if((label_name = get_label_name(def)) == NULL)
-            return rc;
-
-	 if (virStrcpy(sec->label, label_name,
-	     VIR_SECURITY_LABEL_BUFLEN) == NULL) {
-	     virReportError(VIR_ERR_INTERNAL_ERROR,
-	                    "%s", _("error copying label name"));
-	     goto cleanup;
+	 if (getpidlabel(pid,&label_name) == -1){
+             virReportSystemError(errno,
+	                        _("unable to get PID %d security label"),
+	                        pid);
+             return -1;
 	 }
 
-	 rc = 0;
+	 if (strlen(label_name) >= VIR_SECURITY_LABEL_BUFLEN ){
+    	     virReportError(VIR_ERR_INTERNAL_ERROR,
+	                    _("security label exceeds "
+	                      "maximum length: %d"),
+	                    VIR_SECURITY_LABEL_BUFLEN - 1);
+	     free(label_name);
+	     return -1; 
+	 }
 
-       clearup:
-	 VIR_FREE(label_name);
+         strcpy(sec->label,label_name);
+	 free(label_name);
+	 /*Smack default enforced*/
+	 sec->enforcing = 1;
 
-	 return rc;
-	 
+	 return 0;
 }
 
 
@@ -1507,7 +1549,7 @@ SmackGetBaseLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 
 virSecurityDriver virSmackSecurityDriver = {
     .privateData                      = 0,
-    .name                             = SECURIYT_SMACK_NAME,
+    .name                             = SECURITY_SMACK_NAME,
     .probe                            = SmackSecurityDriverProbe,
     .open                             = SmackSecurityDriverOpen,
     .close                            = SmackSecurityDriverClose,
