@@ -432,7 +432,7 @@ SmackRestoreSecurityFileLabel(virSecurityManagerPtr mgr,
       char *newpath = NULL;
       char ebuf[1024];
 
-      VIR_INFO("Restoring Smack context on '%s'", path);
+      VIR_INFO("Restoring Smack label on '%s'", path);
 
       if (virFileResolveLink(path, &newpath) < 0) {
              VIR_WARN("cannot resolve symlink %s: %s", path,
@@ -540,7 +540,7 @@ SmackFSetFileLabel(int fd,char *tlabel)
 
 
 static int
-SmackSetSecurityHostdevSubsysLabel(virSecurityManagerPtr mgr,
+SmackSetSecurityHostdevSubsysLabel(virDomainDefPtr def,
 		                   virDomainHostdevDefPtr dev,
 				   const char *vroot)
 {
@@ -559,7 +559,7 @@ SmackSetSecurityHostdevSubsysLabel(virSecurityManagerPtr mgr,
         if (!usb)
             goto done;
 
-        ret = virUSBDeviceFileIterate(usb, SmackSetSecurityUSBLabel, mgr);
+        ret = virUSBDeviceFileIterate(usb, SmackSetSecurityUSBLabel, def);
         virUSBDeviceFree(usb);
 
         break;
@@ -583,10 +583,10 @@ SmackSetSecurityHostdevSubsysLabel(virSecurityManagerPtr mgr,
                 virPCIDeviceFree(pci);
                 goto done;
             }
-            ret = SmackRestoreSecurityPCILabel(pci, vfioGroupDev, mgr);
+            ret = SmackRestoreSecurityPCILabel(pci, vfioGroupDev, def);
             VIR_FREE(vfioGroupDev);
         } else {
-            ret = virPCIDeviceFileIterate(pci, SmackSetSecurityPCILabel, mgr);
+            ret = virPCIDeviceFileIterate(pci, SmackSetSecurityPCILabel, def);
         }
         virPCIDeviceFree(pci);
         break;
@@ -603,7 +603,7 @@ SmackSetSecurityHostdevSubsysLabel(virSecurityManagerPtr mgr,
             if (!scsi)
                 goto done;
 
-            ret = virSCSIDeviceFileIterate(scsi, SmackSetSecuritySCSILabel, mgr);
+            ret = virSCSIDeviceFileIterate(scsi, SmackSetSecuritySCSILabel, def);
             virSCSIDeviceFree(scsi);
 
             break;
@@ -753,7 +753,6 @@ done:
 
 static int
 SmackRestoreSecurityHostdevCapsLabel(virSecurityManagerPtr mgr,
-		                     virDomainDefPtr def,
 				     virDomainHostdevDefPtr dev,
 				     const char *vroot)
 {
@@ -895,6 +894,7 @@ SmackRestoreSecurityImageLabel(virSecurityManagerPtr mgr,
 			   virDomainDefPtr def,
 			   virDomainDiskDefPtr disk)
 {
+     return SmackRestoreSecurityImageLabelInt(mgr, def,disk,0);
 
 }
 
@@ -1235,7 +1235,7 @@ SmackSetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 
     if (smack_set_label_for_self(secdef->label) < 0) {
 	    virReportError(errno, "%s",
-			   _("unable to set security context '%s'"),
+			   _("unable to set security label '%s'"),
 			   secdef->label);
 	    
 	    return -1;
@@ -1286,15 +1286,6 @@ SmackSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 
 
 
-
-
-
-
-
-
-
-
-
 static int
 SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
 		         virDomainDefPtr def,
@@ -1313,7 +1304,6 @@ SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
 	   return 0;
     
    for (i = 0; i < def->ndisks; i++) {
-       /* XXX fixme - we need to recursively label the entire tree :-( */
        if (def->disks[i]->type == VIR_DOMAIN_DISK_TYPE_DIR) {
            VIR_WARN("Unable to relabel directory tree %s for disk %s",
                     def->disks[i]->src, def->disks[i]->dst);
@@ -1322,10 +1312,9 @@ SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
 
        if (SmackSetSecurityImageLabel(mgr,
 			       def,def->disks[i]) < 0)
-
 	   return -1;
-
     }
+
 
    if (stdin_path) {
        if (setxattr(def->disks[i]->src,"security.SMACK64",secdef->imagelabel,strlen(secdef->imagelabel) + 1,0)< 0 &&
@@ -1425,7 +1414,6 @@ SmackRestoreSecurityHostdevLabel(virSecurityManagerPtr mgr,
     default:
         return 0;
     }
-
 }
 	
 
