@@ -57,13 +57,16 @@
 #define SECURITY_SMACK_VOID_DOI     "0"
 #define SECURITY_SMACK_NAME         "smack"
 
-typedef struct _SmackCallbackData SmackCallbackData; 
-typedef SmackCallbackData *SmackCallbackDataPtr;
-
-struct _SmackCallbackData {
-     virSecurityManagerPtr manager;
-     virSecurityLabelDefPtr secdef;
-};
+/*
+ *
+ *typedef struct _SmackCallbackData SmackCallbackData; 
+ *typedef SmackCallbackData *SmackCallbackDataPtr;
+ *
+ *struct _SmackCallbackData {
+ *     virSecurityManagerPtr manager;
+ *     virSecurityLabelDefPtr secdef;
+ *};
+ */
 
 static char *
 get_label_name(virDomainDefPtr def)
@@ -360,13 +363,13 @@ SmackRestoreSecuritySCSILabel(virSCSIDevicePtr dev ATTRIBUTE_UNUSED,
 static int
 SmackSetSecurityHostdevLabelHelper(const char *file,void *opaque)
 {
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
     virDomainDefPtr def = opaque;
 
-    secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	return -1;
-    return SmackSetFileLabel(file, secdef->imagelabel);
+    return SmackSetFileLabel(file, seclabel->imagelabel);
 }
 
 
@@ -628,11 +631,11 @@ SmackSetSecurityHostdevCapsLabel(virDomainDefPtr def,
 				 const char *vroot)
 {
     int ret = -1;
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
     char *path;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
         return -1;
 
     switch (dev->source.caps.type) {
@@ -645,7 +648,7 @@ SmackSetSecurityHostdevCapsLabel(virDomainDefPtr def,
             if (VIR_STRDUP(path, dev->source.caps.u.storage.block) < 0)
                 return -1;
         }
-        ret = SmackSetFileLabel(path, secdef->imagelabel);
+        ret = SmackSetFileLabel(path, seclabel->imagelabel);
         VIR_FREE(path);
         break;
     }
@@ -659,7 +662,7 @@ SmackSetSecurityHostdevCapsLabel(virDomainDefPtr def,
             if (VIR_STRDUP(path, dev->source.caps.u.misc.chardev) < 0)
                 return -1;
         }
-        ret = SmackSetFileLabel(path, secdef->imagelabel);
+        ret = SmackSetFileLabel(path, seclabel->imagelabel);
         VIR_FREE(path);
         break;
     }
@@ -847,24 +850,24 @@ static int
 SmackSecurityVerify(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 		    virDomainDefPtr def)
 {
-        virSecurityLabelDefPtr secdef;        
-        secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-	if (secdef == NULL)
+        virSecurityLabelDefPtr seclabel;        
+        seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+	if (seclabel == NULL)
 		return -1;
 
-	if (!STREQ(SECURITY_SMACK_NAME, secdef->model)) {
+	if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
 	    virReportError(VIR_ERR_INTERNAL_ERROR,
 	                   _("security label driver mismatch: "
 	                     "'%s' model configured for domain, but "
 	                     "hypervisor driver is '%s'."),
-	                    secdef->model, SECURITY_SMACK_NAME);
+	                    seclabel->model, SECURITY_SMACK_NAME);
 	        return -1;
 	}
 
-	if(secdef->type == VIR_DOMAIN_SECLABEL_STATIC){
-       	   if (smack_label_length(secdef->label) < 0) {
+	if(seclabel->type == VIR_DOMAIN_SECLABEL_STATIC){
+       	   if (smack_label_length(seclabel->label) < 0) {
 	    virReportError(VIR_ERR_XML_ERROR,
-			   _("Invalid security label %s"), secdef->label);
+			   _("Invalid security label %s"), seclabel->label);
 		return -1;
 	   }
 	}
@@ -891,7 +894,7 @@ SmackSetSecurityImageLabel(virSecurityManagerPtr mgr,
 	if (disk->type == VIR_DOMAIN_DISK_TYPE_NETWORK)
 	    return 0;
 
-        if (setxattr(disk->src,"security.SMACK64",secdef->imagelabel,strlen(secdef->imagelabel) + 1,0)< 0)
+        if (setxattr(disk->src,"security.SMACK64",seclabel->imagelabel,strlen(seclabel->imagelabel) + 1,0)< 0)
 
 }
 
@@ -909,27 +912,27 @@ static int
 SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,virDomainDefPtr def)
 {
 
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
         return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
         return 0;
 
-    if (!STREQ(SECURITY_SMACK_NAME, secdef->model)) {
+    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("security label driver mismatch: "
                          "'%s' model configured for domain, but "
                          "hypervisor driver is '%s'."),
-                       secdef->model, SECURITY_SMACK_NAME);
+                       seclabel->model, SECURITY_SMACK_NAME);
 	return -1;
     }
 
 
-    VIR_DEBUG("Setting VM %s socket context %s", def->name, secdef->label);
-    if (setselfsocklabel("security.SMACK64IPIN",secdef->label) == -1) {
+    VIR_DEBUG("Setting VM %s socket context %s", def->name, seclabel->label);
+    if (setselfsocklabel("security.SMACK64IPIN",seclabel->label) == -1) {
         virReportSystemError(errno,
                              _("unable to set socket smack label '%s'"), str);
 	return -1;
@@ -942,29 +945,29 @@ static int
 SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, virDomainDefPtr vm)
 {
 
-    virSecurityLabelDefPtr secdef;  
+    virSecurityLabelDefPtr seclabel;  
     char *label = NULL;
     int ret = -1;
 
-    secdef = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
 	return 0;
 
-    if (!STREQ(SECURITY_SMACK_NAME, secdef->model)) {
+    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("security label driver mismatch: "
                          "'%s' model configured for domain, but "
                          "hypervisor driver is '%s'."),
-                       secdef->model, SECURITY_SMACK_NAME);
+                       seclabel->model, SECURITY_SMACK_NAME);
             return -1;
     }
 
     if (smack_new_label_from_self(&label) == -1){
 	virReportSystemError(errno,
-	                     _("unable to get current process context '%s'"), secdef->label);
+	                     _("unable to get current process context '%s'"), seclabel->label);
          goto done; 
     }
 	
@@ -973,7 +976,7 @@ SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, vi
 
     if (setsockcreate(label,"sockincreate") == -1) {
         virReportSystemError(errno,
-                             _("unable to set socket smack label '%s'"), secdef->label);
+                             _("unable to set socket smack label '%s'"), seclabel->label);
          goto done; 
     }
 
@@ -992,31 +995,31 @@ SmackSetSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 		            virDomainDefPtr vm)
 {
 
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
 	return 0;
 
-    if (!STREQ(SECURITY_SMACK_NAME, secdef->model)) {
+    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("security label driver mismatch: "
                          "'%s' model configured for domain, but "
                          "hypervisor driver is '%s'."),
-                       secdef->model, SECURITY_SMACK_NAME);
+                       seclabel->model, SECURITY_SMACK_NAME);
             return -1;
     }
 
     VIR_DEBUG("Setting VM %s socket label %s",
-              vm->name, secdef->label);
+              vm->name, seclabel->label);
 
-    if (setsockcreate(secdef->label,"sockoutcreate") == -1) {
+    if (setsockcreate(seclabel->label,"sockoutcreate") == -1) {
         virReportSystemError(errno,
                              _("unable to set socket smack label '%s'"),
-                             secdef->label);
+                             seclabel->label);
             return -1; 
     }
 
@@ -1031,28 +1034,28 @@ SmackClearSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 		              virDomainDefPtr def)
 {
 
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
         return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
         return 0;
 
-    if (!STREQ(SECURITY_SELINUX_NAME, secdef->model)) {
+    if (!STREQ(SECURITY_SELINUX_NAME, seclabel->model)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("security label driver mismatch: "
                          "'%s' model configured for domain, but "
                          "hypervisor driver is '%s'."),
-                       secdef->model, SECURITY_SMACK_NAME);
+                       seclabel->model, SECURITY_SMACK_NAME);
             return -1;
     }
 
     if (setsockcreate(NULL,"sockincreate") == -1 && setsockcreate(NULL,"sockoutcreate") == -1) {
         virReportSystemError(errno,
                              _("unable to clear socket smack label '%s'"),
-                             secdef->label);
+                             seclabel->label);
 
             return -1;
     } 
@@ -1170,8 +1173,10 @@ SmackReleaseSecurityLabel(virSecurityManagerPtr mgr,
     if (seclabel == NULL)
 	    return -1;
 
-    VIR_FREE(seclabel->model);
-    VIR_FREE(seclabel->label);
+    if (seclabel->type == VIR_DOMAIN_SECLABEL_DYNAMIC) {
+        VIR_FREE(seclabel->label);
+        VIR_FREE(seclabel->model);
+    }
     VIR_FREE(seclabel->imagelabel);
 
     return 0;
@@ -1222,30 +1227,30 @@ static int
 SmackSetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	                     virDomainDefPtr def)
 {
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
 
-    if (secdef == NULL)
+    if (seclabel == NULL)
         return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
         return 0;
 
-    if (STRNEQ(SECURITY_SMACK_NAME, secdef->model)) {
+    if (STRNEQ(SECURITY_SMACK_NAME, seclabel->model)) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                       _("security label driver mismatch: "
                         "\'%s\' model configured for domain, but "
                         "hypervisor driver is \'%s\'."),
-                      secdef->model, SECURITY_SMACK_NAME);
+                      seclabel->model, SECURITY_SMACK_NAME);
 
                return -1
 	}
 
-    if (smack_set_label_for_self(secdef->label) < 0) {
+    if (smack_set_label_for_self(seclabel->label) < 0) {
 	    virReportError(errno, "%s",
 			   _("unable to set security label '%s'"),
-			   secdef->label);
+			   seclabel->label);
 	    
 	    return -1;
         }
@@ -1261,22 +1266,22 @@ SmackSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	                   	  virDomainDefPtr def,
 				  virCommandPtr cmd)
 {
-       virSecurityLabelDefPtr secdef;
+       virSecurityLabelDefPtr seclabel;
 
-       secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+       seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
 
-       if (secdef == NULL)
+       if (seclabel == NULL)
 	   return -1;
 
-       if (secdef->label == NULL)
+       if (seclabel->label == NULL)
 	   return 0;
 
-       if (STRNEQ(SECURITY_SMACK_NAME, secdef->model)) {
+       if (STRNEQ(SECURITY_SMACK_NAME, seclabel->model)) {
            virReportError(VIR_ERR_INTERNAL_ERROR,
                           _("security label driver mismatch: "
                             "\'%s\' model configured for domain, but "
                             "hypervisor driver is \'%s\'."),
-                          secdef->model, SECURITY_SMACK_NAME);
+                          seclabel->model, SECURITY_SMACK_NAME);
 
 	   return -1;
        }
@@ -1287,7 +1292,7 @@ SmackSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	*/
 
     /* save in cmd to be set after fork/before child process is exec'ed */
-       virCommandSetSmackLabel(cmd,secdef->label);
+       virCommandSetSmackLabel(cmd,seclabel->label);
 
        return 0;
 
@@ -1302,14 +1307,14 @@ SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
 {
 
    size_t i;
-   virSecurityLabelDefPtr secdef;
+   virSecurityLabelDefPtr seclabel;
 
-   secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+   seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
 
-   if (secdef == NULL)
+   if (seclabel == NULL)
 	   return -1;
 
-   if (secdef->norelabel || data->skipAllLabel)
+   if (seclabel->norelabel || data->skipAllLabel)
 	   return 0;
     
    for (i = 0; i < def->ndisks; i++) {
@@ -1326,7 +1331,7 @@ SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
 
 
    if (stdin_path) {
-       if (setxattr(def->disks[i]->src,"security.SMACK64",secdef->imagelabel,strlen(secdef->imagelabel) + 1,0)< 0 &&
+       if (setxattr(def->disks[i]->src,"security.SMACK64",seclabel->imagelabel,strlen(seclabel->imagelabel) + 1,0)< 0 &&
            virStorageFileIsSharedFSType(stdin_path,
                                         VIR_STORAGE_FILE_SHFS_NFS) != 1)
            return -1;
@@ -1342,14 +1347,14 @@ SmackRestoreSecurityAllLabel(virSecurityManagerPtr mgr,
                              int migrated ATTRIBUTE_UNUSED)
 {
    size_t i;
-   virSecurityLabelDefPtr secdef;
+   virSecurityLabelDefPtr seclabel;
 
-   secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+   seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
 
-   if (secdef == NULL)
+   if (seclabel == NULL)
 	   return -1;
 
-   if (secdef->norelabel || data->skipAllLabel)
+   if (seclabel->norelabel || data->skipAllLabel)
 	   return 0;
 
    if (i = 0; i < def->ndisks; i++) {
@@ -1376,12 +1381,12 @@ SmackSetSecurityHostdevLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 			     virDomainHostdevDefPtr dev,
 			     const char *vroot)
 {
-	virSecurityLabelDefPtr secdef;
-	secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
-	if (secdef == NULL)
+	virSecurityLabelDefPtr seclabel;
+	seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
+	if (seclabel == NULL)
             return -1;
 
-	if (secdef->norelabel)
+	if (seclabel->norelabel)
             return 0;
 
 	switch (dev->mode) {
@@ -1404,13 +1409,13 @@ SmackRestoreSecurityHostdevLabel(virSecurityManagerPtr mgr,
 				 virDomainHostdevDefPtr dev,
 				 const char *vroot)
 {
-    virSecurityLabelDefPtr secdef;	
+    virSecurityLabelDefPtr seclabel;	
 
-    secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	return -1;
 
-    if (secdef->norelabel)
+    if (seclabel->norelabel)
 	return 0;
 
     switch (dev->mode) {
@@ -1431,16 +1436,16 @@ SmackSetSavedStateLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	                virDomainDefPtr def,
                         const char *savefile) 
 {
-	 virSecurityLabelDefPtr secdef;
+	 virSecurityLabelDefPtr seclabel;
 
-         secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-         if (secdef == NULL)
+         seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+         if (seclabel == NULL)
              return -1;
 
-         if (secdef->norelabel)
+         if (seclabel->norelabel)
              return 0;
 
-         return SmackSetFileLabel(savefile, secdef->imagelabel);
+         return SmackSetFileLabel(savefile, seclabel->imagelabel);
 }
 
 
@@ -1449,13 +1454,13 @@ SmackRestoreSavedStateLabel(virSecurityManagerPtr mgr,
 		            virDomainDefPtr def,
 			    const char *savefile)
 {
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
         return -1;
 
-    if (secdef->norelabel)
+    if (seclabel->norelabel)
         return 0;
 
     return SmackRestoreSecurityFileLabel(mgr, savefile);
@@ -1466,17 +1471,17 @@ SmackSetImageFDLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	             virDomainDefPtr def,
                      int fd) 
 {
-    virSecurityLabelDefPtr secdef;
+    virSecurityLabelDefPtr seclabel;
 
-    secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
+    seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
 
-    if (secdef == NULL)
+    if (seclabel == NULL)
 	return -1;
 
-    if (secdef->imagelabel == NULL)
+    if (seclabel->imagelabel == NULL)
 	return 0;
 
-    return SmackFSetFileLabel(fd,secdef->imagelabel);
+    return SmackFSetFileLabel(fd,seclabel->imagelabel);
       
 }
 
@@ -1488,11 +1493,11 @@ SmackSetTapFDLabel(virSecurityManagerPtr mgr,
 {
     struct stat buf;
 
-    secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
-    if (secdef == NULL)
+    seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
 	    return -1;
 
-    if (secdef->label == NULL)
+    if (seclabel->label == NULL)
 	    return 0;
     
 
@@ -1507,7 +1512,7 @@ SmackSetTapFDLabel(virSecurityManagerPtr mgr,
 	    return -1;
     }
        
-    return SmackFSetFileLabel(fd,secdef->label);
+    return SmackFSetFileLabel(fd,seclabel->label);
       
 }
 
@@ -1517,15 +1522,15 @@ SmackGetMountOptions(virSecurityManagerPtr mgr,
 		     virDomainDefPtr def)
 {
 	char *opts = NULL;
-	virSecurityLabelDefPtr secdef;
+	virSecurityLabelDefPtr seclabel;
 	
-	if ((secdef = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME))) {
-              if (!secdef->imagelabel)
-		 secdef->imagelabel = get_label_name(def); 
-	      if (secdef->imagelabel &&
+	if ((seclabel = virDomainDefGetSecurityLabelDef(def,SECURITY_SMACK_NAME))) {
+              if (!seclabel->imagelabel)
+		 seclabel->imagelabel = get_label_name(def); 
+	      if (seclabel->imagelabel &&
                   virAsprintf(&opts,
 			      ",smack_label=\"%s\"",
-			      (const char*) secdef->imagelabel) < 0) 
+			      (const char*) seclabel->imagelabel) < 0) 
 		  return NULL;
      }
 
