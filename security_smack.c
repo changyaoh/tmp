@@ -104,7 +104,7 @@ int getfilelabel(const char *path, char ** label)
 	ssize_t size;
 	ssize_t ret;
 
-	size = SMACKLABELLEN + 1;
+	size = SMACK_LABEL_LEN + 1;
 	buf = malloc(size);
         if(!buf)
 		return -1;
@@ -164,7 +164,7 @@ int fgetfilelabel(int fd,char ** label)
 	ssize_t size;
 	ssize_t ret;
 
-	size = SMACKLABELLEN + 1;
+	size = SMACK_LABEL_LEN + 1;
 	buf = malloc(size);
         if(!buf)
 		return -1;
@@ -202,26 +202,32 @@ int fgetfilelabel(int fd,char ** label)
 
 static int getpidlabel(pid_t pid,char **label)
 {
-    char *result;
-    int fd;
-    int ret;
-    char *path;
-    ret = virAsprintf(&path,"/proc/%d/attr/current",pid);
-    if (ret < 0)
-	  return -1;
-    fd = open(path,O_RDONLY);
-    if (fd < 0){
-	    VIRFREE(path);
+
+        char *result;
+        int fd;
+        int ret;
+        char *path;
+
+        result = calloc(SMACK_LABEL_LEN + 1,1);
+        if(result == NULL)
 	    return -1;
-    }
-    ret = read(fd,result,SMACK_LABEL_LEN);
-    close(fd);
-    if(ret < 0){
+        ret = virAsprintf(&path,"/proc/%d/attr/current",pid);
+        if (ret < 0)
+	    return -1;
+        fd = open(path,O_RDONLY);
+        VIRFREE(path);
+        if (fd < 0){
 	    free(result);
 	    return -1;
-    }
-    *label = result;
-    return ret;
+        }
+        ret = read(fd,result,SMACK_LABEL_LEN);
+        close(fd);
+        if(ret < 0){
+	    free(result);
+	    return -1;
+        }
+        *label = result;
+        return ret;
 
 }
 	 
@@ -229,31 +235,29 @@ static int getpidlabel(pid_t pid,char **label)
 
 int setsockcreate(const char *label,const char *attr)
 {
-    int fd;
-    int ret = -1;
-    char *path;
-    ret = virAsprintf(&path,"/proc/self/attr/%s",attr);
-    if (ret < 0)
-	  return -1;
+        int fd;
+        int ret = -1;
+        char *path;
+        ret = virAsprintf(&path,"/proc/self/attr/%s",attr);
+        if (ret < 0)
+	    return -1;
 
-    fd = open(path,O_WRONLY | O_CLOEXEC);
-    VIR_FREE(path);
-    if (fd < 0)
-	  return -1;
+        fd = open(path,O_WRONLY | O_CLOEXEC);
+        VIR_FREE(path);
+        if (fd < 0)
+	    return -1;
 
-    if (label)
-          ret = write(fd,label,strlen(label) + 1);
-    else 
-	  ret = write(fd, NULL, 0);
+        if (label)
+            ret = write(fd,label,strlen(label) + 1);
+        else 
+	    ret = write(fd, NULL, 0);
   
 
-    close(fd);
+        close(fd);
 
-    return (ret < 0) ? -1 : 0;
+        return (ret < 0) ? -1 : 0;
 
 }
-
-
 
 
 
@@ -857,11 +861,13 @@ SmackSecurityVerify(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	        return -1;
 	}
 
-        if (smack_label_length(secdef->label) < 0) {
-            virReportError(VIR_ERR_XML_ERROR,
-                           _("Invalid security label %s"), secdef->label);
-                return -1;
-        }
+	if(secdef->type == VIR_DOMAIN_SECLABEL_STATIC){
+       	   if (smack_label_length(secdef->label) < 0) {
+	    virReportError(VIR_ERR_XML_ERROR,
+			   _("Invalid security label %s"), secdef->label);
+		return -1;
+	   }
+	}
 
     return 0;
 
@@ -1099,13 +1105,13 @@ SmackGenSecurityLabel(virSecurityManagerPtr mgr,
 
     if ((label_name = get_label_name(def)) == NULL)
 	 return ret;
+   
+    if (seclabel->type == VIR_DOMAIN_SECLABEL_DYNAMIC){
 
-    switch (seclabel->type){
-
-    }
-    /*set process label*/
-    if (VIR_STRDUP(seclabel->label,label_name) < 0)
+        /*set process label*/
+       if (VIR_STRDUP(seclabel->label,label_name) < 0)
 	 goto cleanup;
+    }
 
     /*set imagelabel the same as label*/
     if (VIR_STRDUP(seclabel->imagelabel,label_name) < 0)
@@ -1120,9 +1126,12 @@ SmackGenSecurityLabel(virSecurityManagerPtr mgr,
 cleanup:
 
     if(ret != 0){
-          VIR_FREE(seclabel->label);
-	  VIR_FREE(seclabel->imagelabel);
-	  VIR_FREE(seclabel->model);
+       if (seclabel->type == VIR_DOMAIN_SECLABEL_DYNAMIC)
+           VIR_FREE(seclabel->label);
+	   VIR_FREE(seclabel->imagelabel);
+       if (seclabel->type == VIR_DOMAIN_SECLABEL_DYNAMIC &&
+           !seclabel->baselabel)
+	   VIR_FREE(seclabel->model);
     }
 
     VIR_RREE(label_name);

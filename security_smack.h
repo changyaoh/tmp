@@ -28,6 +28,5 @@
 extern virSecurityDriver virSmackSecurityDriver;
 
 # define SMACK_PREFIX "smack-"
-# define SMACKLABELLEN (50)
 
 #endif /* __VIR_SECURITY_SMACK_H__ */
