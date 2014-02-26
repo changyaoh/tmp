@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <attr/xattr.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <fcntl.h>
 #include <sys/smack.h>
 #include <errno.h>
@@ -243,12 +244,14 @@ int setsockcreate(const char *label,const char *attr)
 {
         int fd;
         int ret = -1;
+	long int tid;
         char *path;
-        ret = virAsprintf(&path,"/proc/self/attr/%s",attr);
+	tid = syscall(SYS_gettid);
+        ret = virAsprintf(&path,"/proc/self/task/%ld/attr/%s",tid,attr);
         if (ret < 0)
 	    return -1;
 
-    VIR_DEBUG("setsockcreate is in %d",getpid());
+    VIR_DEBUG("setsockcreate pid is in %d",getpid());
     VIR_DEBUG("real user ID is in %d",getuid());
     VIR_DEBUG("effective user ID is in %d",geteuid());
     VIR_DEBUG("label from self %s",label);
@@ -978,52 +981,50 @@ SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, vi
 {
 
 
+	//return 0;
+
+    virSecurityLabelDefPtr seclabel;  
+    char *label = NULL;
+    int ret = -1;
+
+    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
+    if (seclabel == NULL)
+	return -1;
+
+    if (seclabel->label == NULL)
 	return 0;
 
-/*
- *    virSecurityLabelDefPtr seclabel;  
- *    char *label = NULL;
- *    int ret = -1;
- *
- *    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
- *    if (seclabel == NULL)
- *        return -1;
- *
- *    if (seclabel->label == NULL)
- *        return 0;
- *
- *    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
- *        virReportError(VIR_ERR_INTERNAL_ERROR,
- *                       _("security label driver mismatch: "
- *                         "'%s' model configured for domain, but "
- *                         "hypervisor driver is '%s'."),
- *                       seclabel->model, SECURITY_SMACK_NAME);
- *            return -1;
- *    }
- *
- *    if (smack_new_label_from_self(&label) == -1){
- *        virReportSystemError(errno,
- *                             _("unable to get current process context '%s'"), seclabel->label);
- *         goto done; 
- *    }
- *        
- *    VIR_DEBUG("SmackSetSecurityDaemonSocketLabel is in %d",getpid());
- *    VIR_DEBUG("label from self %s",label);
- *
- *    
- *    VIR_DEBUG("Setting VM %s socket label %s", vm->name, seclabel->label);
- *    if (setsockcreate(label,"sockincreate") == -1) {
- *        virReportSystemError(errno,
- *                             _("unable to set socket smack label '%s'"), seclabel->label);
- *         goto done; 
- *    }
- *
- *    ret = 0;
- *done:
- *
- *    free(label);
- *    return ret;
- */
+    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
+	virReportError(VIR_ERR_INTERNAL_ERROR,
+		       _("security label driver mismatch: "
+			 "'%s' model configured for domain, but "
+			 "hypervisor driver is '%s'."),
+		       seclabel->model, SECURITY_SMACK_NAME);
+	    return -1;
+    }
+
+    if (smack_new_label_from_self(&label) == -1){
+	virReportSystemError(errno,
+			     _("unable to get current process context '%s'"), seclabel->label);
+	 goto done; 
+    }
+	
+    VIR_DEBUG("SmackSetSecurityDaemonSocketLabel is in %d",getpid());
+    VIR_DEBUG("label from self %s",label);
+
+    
+    VIR_DEBUG("Setting VM %s socket label %s", vm->name, seclabel->label);
+    if (setsockcreate(seclabel->label,"sockincreate") == -1) {
+	virReportSystemError(errno,
+			     _("unable to set socket smack label '%s'"), seclabel->label);
+	 goto done; 
+    }
+
+    ret = 0;
+done:
+
+    free(label);
+    return ret;
     
 }
 
