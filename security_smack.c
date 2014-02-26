@@ -248,17 +248,34 @@ int setsockcreate(const char *label,const char *attr)
         if (ret < 0)
 	    return -1;
 
-        fd = open(path,O_WRONLY | O_CLOEXEC);
-        VIR_FREE(path);
-        if (fd < 0)
-	    return -1;
-
-        if (label)
-            ret = write(fd,label,strlen(label) + 1);
-        else 
-	    ret = write(fd, NULL, 0);
+    VIR_DEBUG("setsockcreate is in %d",getpid());
+    VIR_DEBUG("real user ID is in %d",getuid());
+    VIR_DEBUG("effective user ID is in %d",geteuid());
+    VIR_DEBUG("label from self %s",label);
+    VIR_DEBUG("location /proc/self/attr/%s",attr);
+       
+        if (label){
+                    fd = open(path,O_WRONLY | O_CLOEXEC);
+		    VIR_DEBUG("open file %s",path);
+                    VIR_FREE(path);
+                    if (fd < 0)
+		    {
+		    VIR_DEBUG("open faile");
+	                  return -1;
+		    }
+		    VIR_DEBUG("open success");
+		do {
+                      ret = write(fd,label,strlen(label) + 1);
+		}while(ret < 0 && errno == EINTR);
+	}
+	else { 
+                    fd = open(path,O_TRUNC);
+                    VIR_FREE(path);
+                    if (fd < 0)
+	                  return -1;
+		    ret = 0;
+	}
   
-
         close(fd);
 
         return (ret < 0) ? -1 : 0;
@@ -898,8 +915,13 @@ SmackSetSecurityImageLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 	if (disk->type == VIR_DOMAIN_DISK_TYPE_NETWORK)
 	    return 0;
 
+   VIR_DEBUG("set disk image security label before");
+
         if (setxattr(disk->src,"security.SMACK64",seclabel->imagelabel,strlen(seclabel->imagelabel) + 1,0)< 0)
 	    return -1;
+
+   VIR_DEBUG("disk image %s",disk->src);
+   VIR_DEBUG("set disk image security label after");
 
 	return 0;
 
@@ -955,45 +977,53 @@ static int
 SmackSetSecurityDaemonSocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED, virDomainDefPtr vm)
 {
 
-    virSecurityLabelDefPtr seclabel;  
-    char *label = NULL;
-    int ret = -1;
 
-    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
-    if (seclabel == NULL)
-	return -1;
-
-    if (seclabel->label == NULL)
 	return 0;
 
-    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("security label driver mismatch: "
-                         "'%s' model configured for domain, but "
-                         "hypervisor driver is '%s'."),
-                       seclabel->model, SECURITY_SMACK_NAME);
-            return -1;
-    }
-
-    if (smack_new_label_from_self(&label) == -1){
-	virReportSystemError(errno,
-	                     _("unable to get current process context '%s'"), seclabel->label);
-         goto done; 
-    }
-	
-
-
-    if (setsockcreate(label,"sockincreate") == -1) {
-        virReportSystemError(errno,
-                             _("unable to set socket smack label '%s'"), seclabel->label);
-         goto done; 
-    }
-
-    ret = 0;
-done:
-
-    free(label);
-    return ret;
+/*
+ *    virSecurityLabelDefPtr seclabel;  
+ *    char *label = NULL;
+ *    int ret = -1;
+ *
+ *    seclabel = virDomainDefGetSecurityLabelDef(vm, SECURITY_SMACK_NAME);
+ *    if (seclabel == NULL)
+ *        return -1;
+ *
+ *    if (seclabel->label == NULL)
+ *        return 0;
+ *
+ *    if (!STREQ(SECURITY_SMACK_NAME, seclabel->model)) {
+ *        virReportError(VIR_ERR_INTERNAL_ERROR,
+ *                       _("security label driver mismatch: "
+ *                         "'%s' model configured for domain, but "
+ *                         "hypervisor driver is '%s'."),
+ *                       seclabel->model, SECURITY_SMACK_NAME);
+ *            return -1;
+ *    }
+ *
+ *    if (smack_new_label_from_self(&label) == -1){
+ *        virReportSystemError(errno,
+ *                             _("unable to get current process context '%s'"), seclabel->label);
+ *         goto done; 
+ *    }
+ *        
+ *    VIR_DEBUG("SmackSetSecurityDaemonSocketLabel is in %d",getpid());
+ *    VIR_DEBUG("label from self %s",label);
+ *
+ *    
+ *    VIR_DEBUG("Setting VM %s socket label %s", vm->name, seclabel->label);
+ *    if (setsockcreate(label,"sockincreate") == -1) {
+ *        virReportSystemError(errno,
+ *                             _("unable to set socket smack label '%s'"), seclabel->label);
+ *         goto done; 
+ *    }
+ *
+ *    ret = 0;
+ *done:
+ *
+ *    free(label);
+ *    return ret;
+ */
     
 }
 
@@ -1022,8 +1052,7 @@ SmackSetSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
             return -1;
     }
 
-    VIR_DEBUG("Setting VM %s socket label %s",
-              vm->name, seclabel->label);
+    VIR_DEBUG("Setting VM %s socket label %s", vm->name, seclabel->label);
 
     if (setsockcreate(seclabel->label,"sockoutcreate") == -1) {
         virReportSystemError(errno,
@@ -1061,7 +1090,9 @@ SmackClearSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
             return -1;
     }
 
-    if (setsockcreate(NULL,"sockincreate") == -1 && setsockcreate(NULL,"sockoutcreate") == -1) {
+    VIR_DEBUG("clear sock label");
+
+    if (setsockcreate(NULL,"sockincreate") == -1 || setsockcreate(NULL,"sockoutcreate") == -1) {
         virReportSystemError(errno,
                              _("unable to clear socket smack label '%s'"),
                              seclabel->label);
@@ -1114,6 +1145,8 @@ SmackGenSecurityLabel(virSecurityManagerPtr mgr,
                        seclabel->model);
          return ret;
     }
+
+    VIR_DEBUG("type=%d", seclabel->type);
 
     if ((label_name = get_label_name(def)) == NULL)
 	 return ret;
@@ -1301,6 +1334,7 @@ SmackSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 
     /* save in cmd to be set after fork/before child process is exec'ed */
        virCommandSetSmackLabel(cmd,seclabel->label);
+       VIR_DEBUG("save smack label in cmd %s",seclabel->label);
 
        return 0;
 
@@ -1325,18 +1359,27 @@ SmackSetSecurityAllLabel(virSecurityManagerPtr mgr,
    if (seclabel->norelabel)
 	   return 0;
     
-   for (i = 0; i < def->ndisks; i++) {
-       if (def->disks[i]->type == VIR_DOMAIN_DISK_TYPE_DIR) {
-           VIR_WARN("Unable to relabel directory tree %s for disk %s",
-                    def->disks[i]->src, def->disks[i]->dst);
-           continue;
-       }
+   VIR_DEBUG("set image security label before");
+
+   /*
+    *for (i = 0; i < def->ndisks; i++) {
+    *    if (def->disks[i]->type == VIR_DOMAIN_DISK_TYPE_DIR) {
+    *        VIR_WARN("Unable to relabel directory tree %s for disk %s",
+    *                 def->disks[i]->src, def->disks[i]->dst);
+    *        continue;
+    *    }
+    */
+
+   VIR_DEBUG("set image security label");
 
        if (SmackSetSecurityImageLabel(mgr,
-			       def,def->disks[i]) < 0)
+			       def,def->disks[0]) < 0)
 	   return -1;
-    }
+    /*
+     *}
+     */
 
+   VIR_DEBUG("set image security label after");
 
    if (stdin_path) {
        if (setxattr(def->disks[i]->src,"security.SMACK64",seclabel->imagelabel,strlen(seclabel->imagelabel) + 1,0)< 0 &&
@@ -1356,6 +1399,8 @@ SmackRestoreSecurityAllLabel(virSecurityManagerPtr mgr,
 {
    size_t i;
    virSecurityLabelDefPtr seclabel;
+
+   VIR_DEBUG("Restoring security label on %s", def->name);
 
    seclabel = virDomainDefGetSecurityLabelDef(def, SECURITY_SMACK_NAME);
 

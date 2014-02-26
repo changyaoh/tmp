@@ -31,6 +31,7 @@ int fgetfilelabel(int fd,char ** label);
 int fsetfilelabel(int fd,const char * label);
 int setsockcreate(const char *label,const char *attr);
 
+
 extern virSecurityDriver virSmackSecurityDriver;
 
 # define SMACK_PREFIX "smack-"
